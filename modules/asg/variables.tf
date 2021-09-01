@@ -10,7 +10,7 @@ variable "sg_id" {
     type = list(string)
     default = []
 }
-variable "ssh_key_pair" {
+variable "key_name" {
     type = string
     default = ""
 }

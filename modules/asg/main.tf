@@ -10,9 +10,22 @@ data "aws_ami" "amzn2_ami" {
     values = ["available"]
   }
 }
+resource "tls_private_key" "priv_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
 resource "aws_key_pair" "this" {
-  key_name = var.ssh_key_pair
-  public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDN2YetFCpDOsQy7Hx8uCkJGZkFMVYtCmIKwP+Px7H5zPqkt68lF/QvvUn+qpfjoGzDVQTyqWXn7HtpEVJhqUg0T1l5EfGi8H5KvpAevavKtwyyKQYe2j2xLur81hY+rYmphJZ63TWBC+BX9G/qrL+p0Brd4iUrVppbJlmRWdK5LenHv9fNxhB7QlkRhw0ZgMvP2im8XpRbeCVNOSLGTjGrVcXLaEJR4GXCyL7xb3U22FVSIQmofr1ZnDi5X4rVYyan57R6swIIR0ivhKevGjkZ5fWNZpuM5rJAAaMNWZCUayrS1TFbqpEqfa0QMlhO/s7RWlV/6wBzKUbbTDH7yhxp2GkkfK9xWzp5/WRrCb1ckW0ipt4uBrmhMvRKPKQi8NPzJOJaayrL62iwKONsZWCG76InBZkxWBw9PPx840QLFMRytteGcvxg4ZgwZ/seN3kfLDcKz39Fmu2Cj6/1LlXDr3+HPq80DcPJWc3gSWJxSfs93CcKB1Yww6hK/45+isw5hkptQrgYf2rNO+UVW4VYwKrRkuY1VCRiyXeYsz212E0kelceN4pyCeCXneB0ROIwcxVPnukNrKuZLmFtb21JmsD0Ui1Qbn5NxeJkoWAh6E+NiM1EOKDrROluTZ3ydercD5tTq4gCvUmyQ4hpJQ51ZxVn9E3Kg1jf6S4AbTyV2w== ahta@VNPC014167"
+  key_name = var.key_name
+  public_key = tls_private_key.priv_key.public_key_openssh
+  provisioner "local-exec" {
+    command = "rm -f ~/.ssh/'${var.key_name}'.pem"
+  }
+  provisioner "local-exec" {
+    command = "echo '${tls_private_key.priv_key.private_key_pem}' > ~/.ssh/'${var.key_name}'.pem"
+  }
+  provisioner "local-exec" {
+    command = "chmod 400 ~/.ssh/'${var.key_name}'.pem"
+  }
 }
 #define autoscaling launch configuration
 resource "aws_launch_configuration" "this" {
@@ -21,6 +34,16 @@ resource "aws_launch_configuration" "this" {
   instance_type   = var.instance_type
   security_groups = toset(var.sg_id)
   key_name        = aws_key_pair.this.key_name
+  user_data = <<EOF
+        #!/bin/bash
+        yum update -y
+        curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.20.4/2021-04-12/bin/linux/amd64/kubectl
+        chmod +x ./kubectl
+        mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$PATH:$HOME/bin
+    EOF
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 #define autoscaling group
 resource "aws_autoscaling_group" "custom-group-autoscaling" {
@@ -33,4 +56,7 @@ resource "aws_autoscaling_group" "custom-group-autoscaling" {
   health_check_type         = "EC2"
   force_delete              = true
   target_group_arns         = var.targetgrouparn
+  lifecycle {
+    create_before_destroy = true
+  }
 }

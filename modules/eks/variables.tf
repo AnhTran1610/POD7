@@ -18,3 +18,15 @@ variable "k8sversion"{
     type = string
     default = ""
 }
+variable "sg_id" {
+    type = list(string)
+    default = []
+}
+variable "iam_role_cluster_arn" {
+  type = string
+  default = ""
+}
+variable "iam_role_node_arn" {
+  type = string
+  default = ""
+}

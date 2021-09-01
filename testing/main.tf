@@ -15,44 +15,60 @@ locals {
     "us-east-1c" = 220
   }
 }
-# module "vpcbastion" {
-#   source = "../modules/vpc"
 
-#   cidr         = "10.0.0.0/16"
-#   name         = "Bastion"
-#   subnet_tier1 = local.subnet_tier1
-#   subnet_tier2 = local.subnet_tier2
-# }
+### BASTION ZONE
 
-# module "lbbastion" {
-#   source = "../modules/elb"
+module "vpcbastion" {
+  source = "../modules/vpc"
 
-#   namelb            = "NLBBastion"
-#   typelb            = "network"
-#   internal          = false
-#   subnet_public_ids = module.vpcbastion.subnet_id_public
-#   vpcid             = module.vpcbastion.vpcid
-# }
+  cidr                 = "10.0.0.0/16"
+  name                 = "Bastion"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+  subnet_tier1         = local.subnet_tier1
+  subnet_tier2         = local.subnet_tier2
+}
 
-# module "sg" {
-#   source = "../modules/sg"
+module "lbbastion" {
+  source = "../modules/elb"
 
-#   vpcid      = module.vpcbastion.vpcid
-#   namesg     = "allow-ssh"
-#   depends_on = [module.vpcbastion]
-# }
+  namelb            = "NLBBastion"
+  typelb            = "network"
+  internal          = false
+  subnet_public_ids = module.vpcbastion.subnet_id_public
+  vpcid             = module.vpcbastion.vpcid
+}
 
-# module "acg-bastion" {
-#   source = "../modules/asg"
+module "sg-bastion" {
+  source = "../modules/sg"
 
-#   nameec2           = "Bastion"
-#   instance_type     = "t2.micro"
-#   sg_id             = module.sg.sg_id
-#   ssh_key_pair      = "theanh"
-#   subnet_id_private = module.vpcbastion.subnet_id_private
-#   targetgrouparn    = module.lbbastion.target_group_arn
-#   depends_on        = [module.sg]
-# }
+  vpcid         = module.vpcbastion.vpcid
+  namesg        = "allow-ssh"
+  fport-ingress = 0
+  tport-ingress = 0
+
+  fport-egress = 0
+  tport-egress = 0
+  depends_on   = [module.vpcbastion]
+}
+
+module "acg-bastion" {
+  source = "../modules/asg"
+
+  nameec2           = "Bastion"
+  instance_type     = "t2.micro"
+  sg_id             = module.sg-bastion.sg_id
+  key_name          = "theanh"
+  subnet_id_private = module.vpcbastion.subnet_id_private
+  targetgrouparn    = module.lbbastion.target_group_arn
+  depends_on        = [module.sg-bastion]
+}
+module "iam" {
+  source = "../modules/iam"
+}
+
+### CREATE DEV ENVIRONMENT
+
 module "vpcdev" {
   source = "../modules/vpc"
 
@@ -62,36 +78,125 @@ module "vpcdev" {
   name                 = "NonPROD"
   subnet_tier1         = local.subnet_tier1
   subnet_tier2         = local.subnet_tier2
-  subnet_tier3         = local.subnet_tier3
-  namecluster          = "DEV"
+  # subnet_tier3         = local.subnet_tier3
+  namecluster = "DEV"
 }
-# module "vpcprod" {
-#   source = "../modules/vpc"
+module "sg-eksdev" {
+  source = "../modules/sg"
 
-#   cidr                 = "10.2.0.0/16"
-#   enable_dns_hostnames = true
-#   enable_dns_support   = true
-#   name                 = "PROD"
-#   subnet_tier1         = local.subnet_tier1
-#   subnet_tier2         = local.subnet_tier2
-#   subnet_tier3         = local.subnet_tier3
-#   namecluster          = "PROD"
-# }
+  vpcid         = module.vpcdev.vpcid
+  namesg        = "EKSdev-securitygroup"
+  fport-ingress = 0
+  tport-ingress = 0
+  cidringress   = ["0.0.0.0/0"]
+  fport-egress  = 0
+  tport-egress  = 0
+  depends_on    = [module.vpcdev]
+}
 module "eksdev" {
   source = "../modules/eks"
 
-  namecluster        = "DEV"
-  namenodegroup      = "node-general"
+  namecluster          = "DEV"
+  iam_role_cluster_arn = module.iam.iam_role_cluster_arn
+  iam_role_node_arn    = module.iam.iam_role_node_arn
+  namenodegroup        = "node-general"
+  # sg_id              = module.sg-eksdev.sg_id
   allsubnetid        = module.vpcdev.subnet_id_all
   allsubnetprivateid = module.vpcdev.subnet_id_private
-  k8sversion         = "1.21"
+  k8sversion         = "1.20"
+  depends_on = [
+    module.iam
+  ]
 }
-# module "eksprod" {
-#   source = "../modules/eks"
 
-#   namecluster        = "PROD"
-#   namenodegroup      = "node-general1"
-#   allsubnetid        = module.vpcprod.subnet_id_all
-#   allsubnetprivateid = module.vpcprod.subnet_id_private
-#   k8sversion         = "1.21"
+module "helmdev" {
+  source = "../modules/helm"
+
+  hosturl     = module.eksdev.cluster_endpoint
+  ca_cer      = module.eksdev.cluster_certificate_authority_data
+  clustername = module.eksdev.cluster_name
+}
+
+### CREATE PRODUCTION ENVIRONMENT
+
+module "vpcprod" {
+  source = "../modules/vpc"
+
+  cidr                 = "10.2.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+  name                 = "PROD"
+  subnet_tier1         = local.subnet_tier1
+  subnet_tier2         = local.subnet_tier2
+  # subnet_tier3         = local.subnet_tier3
+  namecluster = "PROD"
+}
+module "sg-eksprod" {
+  source = "../modules/sg"
+
+  vpcid         = module.vpcprod.vpcid
+  namesg        = "EKSprod-securitygroup"
+  fport-ingress = 0
+  tport-ingress = 0
+  cidringress   = ["0.0.0.0/0"]
+  fport-egress  = 0
+  tport-egress  = 0
+  depends_on    = [module.vpcprod]
+}
+module "eksprod" {
+  source = "../modules/eks"
+
+  namecluster          = "PROD"
+  iam_role_cluster_arn = module.iam.iam_role_cluster_arn
+  iam_role_node_arn    = module.iam.iam_role_node_arn
+  namenodegroup        = "node-general1"
+  allsubnetid          = module.vpcprod.subnet_id_all
+  allsubnetprivateid   = module.vpcprod.subnet_id_private
+  k8sversion           = "1.20"
+  depends_on = [
+    module.iam
+  ]
+}
+module "helmprod" {
+  source = "../modules/helm"
+
+  hosturl     = module.eksprod.cluster_endpoint
+  ca_cer      = module.eksprod.cluster_certificate_authority_data
+  clustername = module.eksprod.cluster_name
+}
+
+
+
+## Create VPC Peering module ( TODO )
+resource "aws_vpc_peering_connection" "this" {
+  peer_vpc_id = module.vpcdev.vpcid
+  vpc_id      = module.vpcbastion.vpcid
+  auto_accept = true
+  accepter {
+    allow_remote_vpc_dns_resolution = true
+  }
+  requester {
+    allow_remote_vpc_dns_resolution = true
+  }
+  tags = {
+    Name = "VPC Peering between Bastion and Dev"
+  }
+}
+resource "aws_route" "a" {
+  route_table_id            = module.vpcbastion.route_table_private_id
+  destination_cidr_block    = module.vpcdev.vpccidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.this.id
+  depends_on                = [module.vpcbastion]
+}
+# resource "aws_route" "b" {
+#   route_table_id            = module.vpcdev.route_table_public_id
+#   destination_cidr_block    = module.vpcbastion.vpccidr
+#   vpc_peering_connection_id = aws_vpc_peering_connection.this.id
+#   depends_on                = [module.vpcdev]
 # }
+resource "aws_route" "c" {
+  route_table_id            = module.vpcdev.route_table_private_id
+  destination_cidr_block    = module.vpcbastion.vpccidr
+  vpc_peering_connection_id = aws_vpc_peering_connection.this.id
+  depends_on                = [module.vpcdev]
+}
