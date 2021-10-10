@@ -109,75 +109,73 @@ module "eksdev" {
   ]
 }
 
-module "helmdev" {
-  source = "../modules/helm"
+# module "helmdev" {
+#   source = "../modules/helm"
 
-  hosturl     = module.eksdev.cluster_endpoint
-  ca_cer      = module.eksdev.cluster_certificate_authority_data
-  clustername = module.eksdev.cluster_name
-}
+#   hosturl     = module.eksdev.cluster_endpoint
+#   ca_cer      = module.eksdev.cluster_certificate_authority_data
+#   clustername = module.eksdev.cluster_name
+# }
 
-### Create IAM Roles for Service Accounts
-data "tls_certificate" "this" {
-  url = module.eksdev.cluster_identity
-}
+# ### Create IAM Roles for Service Accounts
+# data "tls_certificate" "this" {
+#   url = module.eksdev.cluster_identity
+# }
 
-resource "aws_iam_openid_connect_provider" "this" {
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = [data.tls_certificate.this.certificates[0].sha1_fingerprint]
-  url             = module.eksdev.cluster_identity
-}
+# resource "aws_iam_openid_connect_provider" "this" {
+#   client_id_list  = ["sts.amazonaws.com"]
+#   thumbprint_list = [data.tls_certificate.this.certificates[0].sha1_fingerprint]
+#   url             = module.eksdev.cluster_identity
+# }
 
-data "aws_iam_policy_document" "sa_role_policy" {
-  statement {
-    sid     = "SA"
-    actions = ["sts:AssumeRoleWithWebIdentity"]
-    effect  = "Allow"
+# data "aws_iam_policy_document" "sa_role_policy" {
+#   statement {
+#     sid     = "SA"
+#     actions = ["sts:AssumeRoleWithWebIdentity"]
+#     effect  = "Allow"
 
-    condition {
-      test     = "StringEquals"
-      variable = "${replace(aws_iam_openid_connect_provider.this.url, "https://", "")}:sub"
-      values   = ["system:serviceaccount:default:external-dns"]
-    }
+#     condition {
+#       test     = "StringEquals"
+#       variable = "${replace(aws_iam_openid_connect_provider.this.url, "https://", "")}:sub"
+#       values   = ["system:serviceaccount:default:external-dns"]
+#     }
 
-    principals {
-      identifiers = [aws_iam_openid_connect_provider.this.arn]
-      type        = "Federated"
-    }
-  }
-}
+#     principals {
+#       identifiers = [aws_iam_openid_connect_provider.this.arn]
+#       type        = "Federated"
+#     }
+#   }
+# }
 
-resource "aws_iam_role" "iam_sa" {
-  assume_role_policy = data.aws_iam_policy_document.sa_role_policy.json
-  name               = "iam_service_account"
-}
+# resource "aws_iam_role" "iam_sa" {
+#   assume_role_policy = data.aws_iam_policy_document.sa_role_policy.json
+#   name               = "iam_service_account"
+# }
 
-data "aws_iam_policy_document" "external_dns_policy" {
-  statement {
-    actions   = ["route53:ChangeResourceRecordSets"]
-    effect    = "Allow"
-    resources = ["arn:aws:route53:::hostedzone/*"]
-  }
-  statement {
-    actions = [
-      "route53:ListHostedZones",
-      "route53:ListResourceRecordSets",
-    ]
-    effect    = "Allow"
-    resources = ["*"]
-  }
-}
-### Attach externalDNS-policy for IAM ServiceAccount
-resource "aws_iam_policy" "externalDnsPolicy" {
-  name   = "external-dns-policy"
-  policy = data.aws_iam_policy_document.external_dns_policy.json
-}
-resource "aws_iam_role_policy_attachment" "externalDnsPolicy" {
-  policy_arn = aws_iam_policy.externalDnsPolicy.arn
-  role       = aws_iam_role.iam_sa.name
-}
-
-
+# data "aws_iam_policy_document" "external_dns_policy" {
+#   statement {
+#     actions   = ["route53:ChangeResourceRecordSets"]
+#     effect    = "Allow"
+#     resources = ["arn:aws:route53:::hostedzone/*"]
+#   }
+#   statement {
+#     actions = [
+#       "route53:ListHostedZones",
+#       "route53:ListResourceRecordSets",
+#     ]
+#     effect    = "Allow"
+#     resources = ["*"]
+#   }
+# }
+# ### Attach externalDNS-policy for IAM ServiceAccount
+# resource "aws_iam_policy" "externalDnsPolicy" {
+#   name   = "external-dns-policy"
+#   policy = data.aws_iam_policy_document.external_dns_policy.json
+# }
+# resource "aws_iam_role_policy_attachment" "externalDnsPolicy" {
+#   policy_arn = aws_iam_policy.externalDnsPolicy.arn
+#   role       = aws_iam_role.iam_sa.name
+# }
 
 # ### CREATE PRODUCTION ENVIRONMENT
 

@@ -23,7 +23,7 @@ metadata:
   name: nginx
   annotations:
     # this part will make more sense later
-    external-dns.alpha.kubernetes.io/hostname: test.cmcloudlab560.info
+    external-dns.alpha.kubernetes.io/hostname: test.cmcloudlab0498.info
   labels:
     app: nginx
 spec:
